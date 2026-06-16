@@ -10,5 +10,4 @@ google-genai
 pymupdf
 python-docx
 python-pptx
-language-tool-python
 python-multipart

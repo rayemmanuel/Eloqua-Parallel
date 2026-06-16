@@ -1,15 +1,16 @@
-import language_tool_python
 import re
+import json
 import subprocess
 import time
 import wave
 from concurrent.futures import ThreadPoolExecutor
 from google import genai
+from google.genai import types
+from pydantic import BaseModel
 import config
 
-# Initialize Gemini Client for cloud-based transcription
+# Initialize Gemini Client for cloud-based transcription and grammar analysis
 client = genai.Client(api_key=config.GEMINI_API_KEY)
-tool = language_tool_python.LanguageTool("en-US")
 
 FILLER_WORDS = ["uh", "um", "like", "you know", "basically",
                 "literally", "actually", "so", "right"]
@@ -86,25 +87,48 @@ def analyze_pacing(transcript: str, duration_seconds: float) -> dict:
 
     return {"words_per_minute": wpm, "pacing_feedback": feedback}
 
+class GrammarSuggestion(BaseModel):
+    message: str
+    context: str
+
+class GrammarCheckResult(BaseModel):
+    grammar_score: float
+    error_count: int
+    suggestions: list[GrammarSuggestion]
+
 def check_grammar(transcript: str) -> dict:
     """
-    Runs the transcript through LanguageTool and returns
-    a grammar score out of 100 with up to 5 suggestions.
+    Analyzes the grammar, spelling, and phrasing of the transcript using the Gemini API.
+    Returns a score, error count, and a list of suggestions.
     """
-    matches = tool.check(transcript)
-    error_count = len(matches)
-    word_count = max(len(transcript.split()), 1)
-    error_rate = error_count / word_count
-    score = round(max(0, 100 - (error_rate * 300)), 1)
-    suggestions = [
-        {"message": m.message, "context": m.context}
-        for m in matches[:5]
-    ]
-    return {
-        "grammar_score": score,
-        "error_count": error_count,
-        "suggestions": suggestions
-    }
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"Please analyze the grammar, spelling, punctuation, and phrasing of the following speech transcript. Count the total errors and provide suggestions for correction.\n\nTranscript:\n{transcript}",
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=GrammarCheckResult
+            )
+        )
+        data = json.loads(response.text)
+        return {
+            "grammar_score": float(data.get("grammar_score", 100.0)),
+            "error_count": int(data.get("error_count", 0)),
+            "suggestions": [
+                {
+                    "message": str(s.get("message", "")),
+                    "context": str(s.get("context", ""))
+                }
+                for s in data.get("suggestions", [])[:5]
+            ]
+        }
+    except Exception as e:
+        print(f"[GRAMMAR] Gemini grammar check error: {e}")
+        return {
+            "grammar_score": 100.0,
+            "error_count": 0,
+            "suggestions": []
+        }
 
 def full_analysis(audio_path: str, topic: str = "") -> dict:
     """
