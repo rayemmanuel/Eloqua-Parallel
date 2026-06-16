@@ -3,5 +3,5 @@ uvicorn
 pydantic
 httpx
 opencv-python-headless
-mediapipe
-numpy
+mediapipe==0.10.14
+numpy==1.26.4
