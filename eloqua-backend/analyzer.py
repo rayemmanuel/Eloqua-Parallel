@@ -1,23 +1,55 @@
-import whisper
 import language_tool_python
 import re
 import subprocess
 import time
+import wave
 from concurrent.futures import ThreadPoolExecutor
+from google import genai
+import config
 
-# Load Whisper model once at startup
-model = whisper.load_model("base")
+# Initialize Gemini Client for cloud-based transcription
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 tool = language_tool_python.LanguageTool("en-US")
 
 FILLER_WORDS = ["uh", "um", "like", "you know", "basically",
                 "literally", "actually", "so", "right"]
 
 def transcribe(audio_path: str) -> dict:
-    result = model.transcribe(audio_path, language="en")
-    segments = result.get("segments", [])
-    duration = segments[-1]["end"] if segments else 1.0
+    """
+    Transcribes the WAV audio file using the Google GenAI Gemini API,
+    measuring the duration natively using the wave module.
+    """
+    duration = 1.0
+    try:
+        with wave.open(audio_path, 'rb') as wav_file:
+            frames = wav_file.getnframes()
+            rate = wav_file.getframerate()
+            duration = frames / float(rate)
+    except Exception as e:
+        print(f"[TRANSCRIBE] Error reading WAV duration: {e}")
+
+    print(f"[TRANSCRIBE] Uploading audio to Gemini: {audio_path}")
+    uploaded_file = client.files.upload(file=audio_path)
+    
+    try:
+        print("[TRANSCRIBE] Requesting transcription from Gemini...")
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                "Please transcribe this audio accurately. Output only the transcription text, with no preamble or comments.",
+                uploaded_file
+            ]
+        )
+        transcript = response.text.strip() if response.text else ""
+    finally:
+        # Clean up the uploaded file from Google's cloud storage
+        try:
+            client.files.delete(name=uploaded_file.name)
+        except Exception as delete_err:
+            print(f"[TRANSCRIBE] Clean up cloud file error: {delete_err}")
+
     return {
-        "text": result["text"].strip(),
+        "text": transcript,
         "duration": duration
     }
 

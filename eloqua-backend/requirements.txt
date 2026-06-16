@@ -10,6 +10,5 @@ google-genai
 pymupdf
 python-docx
 python-pptx
-openai-whisper
 language-tool-python
 python-multipart
