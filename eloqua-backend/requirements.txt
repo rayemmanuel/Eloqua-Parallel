@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+bcrypt
+peewee
+httpx
+python-jose[cryptography]
+python-dotenv
+google-genai
+pymupdf
+python-docx
+python-pptx
+openai-whisper
+language-tool-python

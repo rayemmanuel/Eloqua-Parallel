@@ -1,0 +1,24 @@
+# Secrets
+eloqua-backend/.env
+
+# Python Virtual Environments & Cache
+**/venv/
+**/__pycache__/
+*.pyc
+
+# Local Databases
+*.db
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+hs_err_pid*.log
+
+# Flutter/Dart build files (if any in root)
+.dart_tool/
+.packages
+.pub/
+build/
