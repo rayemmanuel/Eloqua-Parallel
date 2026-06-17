@@ -1,16 +1,37 @@
+import os
+import datetime
+from dotenv import load_dotenv
 from peewee import (
-    SqliteDatabase, Model,
+    Model,
     CharField, FloatField, DateTimeField,
     TextField, BlobField, IntegerField,
     ForeignKeyField, CompositeKey
 )
-import datetime
 
-db = SqliteDatabase("eloqua.db")
+load_dotenv()
+
+# ── Database selection ─────────────────────────────────────────────────────────
+# If DATABASE_URL is set (e.g. on Render/Supabase), use PostgreSQL.
+# Otherwise fall back to local SQLite for development.
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+if DATABASE_URL:
+    from playhouse.db_url import connect
+    db = connect(DATABASE_URL, autorollback=True)
+else:
+    from peewee import SqliteDatabase
+    db = SqliteDatabase("eloqua.db")
+
+
+# ── Base model ─────────────────────────────────────────────────────────────────
+class BaseModel(Model):
+    class Meta:
+        database = db
 
 
 # ── User ───────────────────────────────────────────────────────────────────────
-class User(Model):
+class User(BaseModel):
     name            = CharField()
     email           = CharField(unique=True)
     password_hash   = CharField()
@@ -20,12 +41,11 @@ class User(Model):
     created_at      = DateTimeField(default=datetime.datetime.now)
 
     class Meta:
-        database   = db
         table_name = "users"
 
 
 # ── Session ────────────────────────────────────────────────────────────────────
-class Session(Model):
+class Session(BaseModel):
     user_id             = CharField(default="anonymous")
     timestamp           = DateTimeField(default=datetime.datetime.now)
     topic               = TextField(default="")
@@ -39,15 +59,14 @@ class Session(Model):
     posture_score       = FloatField(default=0)
     gesture_score       = FloatField(default=0)
     body_language_score = FloatField(default=0)
-    relevance_score     = FloatField(default=0) 
-    
+    relevance_score     = FloatField(default=0)
+
     class Meta:
-        database   = db
         table_name = "sessions"
 
 
 # ── FeedPostModel ──────────────────────────────────────────────────────────────
-class FeedPostModel(Model):
+class FeedPostModel(BaseModel):
     id          = CharField(primary_key=True)   # UUID string
     user        = ForeignKeyField(User, backref="feed_posts")
     overall     = IntegerField()
@@ -62,12 +81,11 @@ class FeedPostModel(Model):
     posted_at   = DateTimeField(default=datetime.datetime.now)
 
     class Meta:
-        database   = db
         table_name = "feed_posts"
 
 
 # ── FeedCommentModel ───────────────────────────────────────────────────────────
-class FeedCommentModel(Model):
+class FeedCommentModel(BaseModel):
     id        = CharField(primary_key=True)     # UUID string
     post      = ForeignKeyField(FeedPostModel, backref="comments")
     user      = ForeignKeyField(User, backref="feed_comments")
@@ -75,23 +93,21 @@ class FeedCommentModel(Model):
     posted_at = DateTimeField(default=datetime.datetime.now)
 
     class Meta:
-        database   = db
         table_name = "feed_comments"
 
 
 # ── PostLike ───────────────────────────────────────────────────────────────────
-class PostLike(Model):
+class PostLike(BaseModel):
     post = ForeignKeyField(FeedPostModel, backref="liked_by")
     user = ForeignKeyField(User, backref="liked_posts")
 
     class Meta:
-        database    = db
         table_name  = "post_likes"
         primary_key = CompositeKey("post", "user")  # one like per user per post
 
 
 # ── AnalysisJob ────────────────────────────────────────────────────────────────
-class AnalysisJob(Model):
+class AnalysisJob(BaseModel):
     job_id      = CharField(primary_key=True)  # UUID string
     user_id     = CharField()
     status      = CharField(default="pending")  # pending, completed, failed
@@ -100,7 +116,6 @@ class AnalysisJob(Model):
     created_at  = DateTimeField(default=datetime.datetime.now)
 
     class Meta:
-        database   = db
         table_name = "analysis_jobs"
 
 
@@ -110,4 +125,4 @@ def init_db():
     db.create_tables(
         [User, Session, FeedPostModel, FeedCommentModel, PostLike, AnalysisJob],
         safe=True   # safe=True means it won't error if tables already exist
-    )
+    )

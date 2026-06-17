@@ -3,6 +3,7 @@ uvicorn
 pydantic
 bcrypt
 peewee
+psycopg2-binary
 httpx
 python-jose[cryptography]
 python-dotenv
