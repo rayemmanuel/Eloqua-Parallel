@@ -4,6 +4,7 @@ from pptx import Presentation
 from google import genai
 from google.genai import types
 from config import GEMINI_API_KEY
+from pydantic import BaseModel
 import json, re
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -25,6 +26,34 @@ def extract_text(file_path: str, file_type: str) -> str:
         return "\n".join(text)
     return ""
 
+
+# ── Pydantic models for structured Gemini outputs ──────────────────────────────
+
+class TalkingPointsResult(BaseModel):
+    title: str
+    talking_points: list[str]
+
+
+class RelevanceResult(BaseModel):
+    relevance_score: float
+    relevance_feedback: str
+
+
+class CoveragePoint(BaseModel):
+    talking_point: str
+    covered: bool
+    confidence: str
+    feedback: str
+
+
+class CoverageResult(BaseModel):
+    coverage_report: list[CoveragePoint]
+    coverage_score: float
+    coverage_feedback: str
+
+
+# ── API Logic ──────────────────────────────────────────────────────────────────
+
 def generate_talking_points(text: str) -> dict:
     prompt = f"""
 You are an academic speech coach. Based on the following document content,
@@ -38,23 +67,31 @@ Each talking point should be:
 
 Document content:
 {text[:3000]}
-
-Respond in this exact JSON format with no extra text:
-{{
-  "title": "brief title of the document topic",
-  "talking_points": [
-    "talking point 1",
-    "talking point 2",
-    "talking point 3"
-  ]
-}}
 """
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-    cleaned = re.sub(r"```json|```", "", response.text).strip()
-    return json.loads(cleaned)
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=TalkingPointsResult
+            )
+        )
+        data = json.loads(response.text)
+        return {
+            "title": str(data.get("title", "Document Summary")),
+            "talking_points": [str(tp) for tp in data.get("talking_points", [])]
+        }
+    except Exception as e:
+        print(f"[DOCUMENT] Error generating talking points: {e}")
+        return {
+            "title": "Document Analysis",
+            "talking_points": [
+                "Explain the main objective of the presentation.",
+                "Detail the key methodology or structure discussed.",
+                "Summarize the main results or conclusions."
+            ]
+        }
 
 def check_relevance(topic: str, transcript: str) -> dict:
     """
@@ -81,19 +118,27 @@ Consider:
 - Did they actually address the topic?
 - Did they stay on topic throughout?
 - Did they provide a clear introduction, definition, example, or analysis related to the topic?
-
-Respond in this exact JSON format with no extra text:
-{{
-  "relevance_score": a number between 0 and 100 representing how on-topic the speech was,
-  "relevance_feedback": "two sentences max — first say what they did well topic-wise, then what they missed or went off-topic about"
-}}
 """
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-    cleaned = re.sub(r"```json|```", "", response.text).strip()
-    return json.loads(cleaned)
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=RelevanceResult
+            )
+        )
+        data = json.loads(response.text)
+        return {
+            "relevance_score": float(data.get("relevance_score", 0.0)),
+            "relevance_feedback": str(data.get("relevance_feedback", ""))
+        }
+    except Exception as e:
+        print(f"[DOCUMENT] Error checking relevance: {e}")
+        return {
+            "relevance_score": 0,
+            "relevance_feedback": "Could not verify topic relevance."
+        }
 
 def check_coverage(talking_points: list, transcript: str) -> dict:
     """
@@ -119,27 +164,38 @@ This is the transcript of what the student actually said:
 
 For each talking point, determine if the student covered it in their speech.
 Be fair — the student does not need to use exact words, just convey the idea clearly.
-
-Respond in this exact JSON format with no extra text:
-{{
-  "coverage_report": [
-    {{
-      "talking_point": "the talking point text",
-      "covered": true or false,
-      "confidence": "high, medium, or low",
-      "feedback": "one sentence explaining why it was or was not covered"
-    }}
-  ],
-  "coverage_score": percentage of talking points covered as a number between 0 and 100,
-  "coverage_feedback": "one overall sentence summarizing the student's content coverage"
-}}
 """
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-    cleaned = re.sub(r"```json|```", "", response.text).strip()
-    return json.loads(cleaned)
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=CoverageResult
+            )
+        )
+        data = json.loads(response.text)
+        return {
+            "coverage_report": [
+                {
+                    "talking_point": str(cp.get("talking_point", "")),
+                    "covered": bool(cp.get("covered", False)),
+                    "confidence": str(cp.get("confidence", "low")),
+                    "feedback": str(cp.get("feedback", ""))
+                }
+                for cp in data.get("coverage_report", [])
+            ],
+            "coverage_score": float(data.get("coverage_score", 0.0)),
+            "coverage_feedback": str(data.get("coverage_feedback", ""))
+        }
+    except Exception as e:
+        print(f"[DOCUMENT] Error checking coverage: {e}")
+        return {
+            "coverage_report": [],
+            "coverage_score": 0,
+            "coverage_feedback": "Could not verify talking point coverage."
+        }
+
 
 def chat_with_coach(history: list, system_prompt: str) -> str:
     contents = []
