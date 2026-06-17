@@ -220,6 +220,9 @@ def categories():
 
 @app.post("/upload-document")
 async def upload_document(file: UploadFile = File(...)):
+    # Ensure uploads folder exists
+    os.makedirs("uploads", exist_ok=True)
+    
     ext = file.filename.split(".")[-1].lower()
     if ext not in ["pdf", "docx", "pptx"]:
         return {"error": "Only PDF, DOCX, and PPTX files are supported."}
