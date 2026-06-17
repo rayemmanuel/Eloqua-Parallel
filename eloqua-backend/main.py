@@ -10,7 +10,7 @@ from jose import jwt, JWTError
 import bcrypt
 import config
 
-from database import init_db, Session, User, FeedPostModel, FeedCommentModel, PostLike, AnalysisJob
+from database import init_db, Session, User, FeedPostModel, FeedCommentModel, PostLike, AnalysisJob, db
 from analyzer import full_analysis
 from prompts import get_prompt, get_all_categories
 from document_processor import extract_text, generate_talking_points, check_coverage, chat_with_coach
@@ -23,6 +23,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+# ── Per-request DB connection (required when autoconnect=False) ────────────────
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class DBConnectionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            db.connect(reuse_if_open=True)
+        except Exception:
+            pass   # Already connected — safe to ignore
+        try:
+            response = await call_next(request)
+        finally:
+            if not db.is_closed():
+                db.close()
+        return response
+
+app.add_middleware(DBConnectionMiddleware)
 
 init_db()
 

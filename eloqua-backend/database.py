@@ -18,7 +18,10 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 if DATABASE_URL:
     from playhouse.db_url import connect
-    db = connect(DATABASE_URL, autorollback=True)
+    # autoconnect=False prevents peewee from eagerly connecting at import time.
+    # The connection is established lazily on first query, which avoids crashing
+    # the entire app at startup if the database is temporarily unreachable.
+    db = connect(DATABASE_URL, autorollback=True, autoconnect=False)
 else:
     from peewee import SqliteDatabase
     db = SqliteDatabase("eloqua.db")
@@ -121,8 +124,18 @@ class AnalysisJob(BaseModel):
 
 # ── Init ───────────────────────────────────────────────────────────────────────
 def init_db():
-    db.connect(reuse_if_open=True)
-    db.create_tables(
-        [User, Session, FeedPostModel, FeedCommentModel, PostLike, AnalysisJob],
-        safe=True   # safe=True means it won't error if tables already exist
-    )
+    try:
+        db.connect(reuse_if_open=True)
+        db.create_tables(
+            [User, Session, FeedPostModel, FeedCommentModel, PostLike, AnalysisJob],
+            safe=True   # safe=True means it won't error if tables already exist
+        )
+        print("[DB] Connected successfully and tables verified.")
+    except Exception as e:
+        print(f"[DB] WARNING: Could not connect to database at startup: {e}")
+        print("[DB] App will still start — DB operations will fail until the database is reachable.")
+    finally:
+        # With autoconnect=False we manage connections manually.
+        # Close the init connection so the pool is clean before requests come in.
+        if not db.is_closed():
+            db.close()
