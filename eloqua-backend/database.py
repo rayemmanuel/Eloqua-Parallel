@@ -18,10 +18,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 if DATABASE_URL:
     from playhouse.db_url import connect
-    # autoconnect=False prevents peewee from eagerly connecting at import time.
-    # The connection is established lazily on first query, which avoids crashing
-    # the entire app at startup if the database is temporarily unreachable.
-    db = connect(DATABASE_URL, autorollback=True, autoconnect=False)
+    # autoconnect=True allows peewee to connect lazily on the first query, which avoids
+    # crashing if the database is temporarily unreachable.
+    db = connect(DATABASE_URL, autorollback=True, autoconnect=True)
 else:
     from peewee import SqliteDatabase
     db = SqliteDatabase("eloqua.db")
